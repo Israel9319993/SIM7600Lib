@@ -4,6 +4,9 @@ A lightweight and reusable library for ESP32/Arduino to manage SIM7600 LTE modul
 This is a professionally structured `README.md` for your GitHub repository. It uses clear headings, badges, code snippets, and icons to make the library look high-quality and easy to use.
 
 ---
+Here is the updated **README.md**. I have added a dedicated **"Examples & Usage"** section that breaks down the three core scenarios (Basic, MQTT, and HTTP/OTA) with clear explanations of how the code works.
+
+---
 
 # 🛰️ SIM7600-Master 
 
@@ -19,140 +22,103 @@ This library provides a high-level interface for GPRS connectivity, Secure MQTT,
 ## ✨ Features
 
 - 📶 **Network Management**: Automatic GPRS attachment and signal quality monitoring.
-- ✉️ **MQTT/MQTTS**: Support for multiple clients, Last Will, clean sessions, and SSL.
-- 🌐 **HTTP/HTTPS**: Simple GET requests and automated OTA updates.
+- ✉️ **MQTT/MQTTS**: Support for multiple clients, Last Will, and asynchronous callbacks.
+- 🌐 **HTTP/HTTPS**: Simple GET requests and automated OTA updates via cellular.
 - 🕒 **NTP Sync**: Fetch real-time clock data from global servers.
 - 🛠️ **Error Decoder**: Converts cryptic AT command error codes into human-readable strings.
 - 🧵 **FreeRTOS Ready**: Built-in support for `vTaskDelay` and non-blocking yields.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Installation
 
-### 1. Installation
 1. Download this repository as a `.zip`.
 2. In the Arduino IDE, go to **Sketch** -> **Include Library** -> **Add .ZIP Library...**.
+3. Ensure you are using an ESP32 for OTA features, though basic functions work on most Arduino boards.
 
-### 2. Basic Setup
+---
+
+## 📂 Examples & Usage
+
+The library includes three primary examples to get you started quickly. You can find these in the `examples/` folder.
+
+### 1. Basic Connection & Network
+**File:** `01_Basic_Connection.ino`  
+This example shows how to initialize the hardware and establish a GPRS data connection.
+
+*   **Initialization:** Set the baud rate and hardware pins (RX/TX).
+*   **Signal Monitoring:** Uses `modem.signalQuality()` to return a value from 0-31.
+*   **GPRS:** Attaches the modem to your provider's APN to enable internet access.
+
 ```cpp
-#include <SIM7600.h>
+if (modem.begin(115200, SERIAL_8N1, 16, 17)) {
+    modem.connectGPRS("your_apn"); 
+}
+```
 
-// Use HardwareSerial 2 for SIM7600
-Sim7600Manager modem(Serial2);
+### 2. MQTT with Callbacks
+**File:** `02_MQTT_Client.ino`  
+This example demonstrates a fully asynchronous MQTT client.
 
+*   **Callbacks:** You register a function (e.g., `onMessageReceived`) that triggers automatically when a message arrives.
+*   **The Loop:** You **must** call `modem.mqtt.loop()` in your main `void loop()`. This allows the library to process incoming serial data from the modem.
+*   **Publish/Subscribe:** Standard MQTT operations with support for QoS and Retain flags.
+
+```cpp
 void setup() {
-    Serial.begin(115200);
-    
-    // Initialize Modem (Baud, Config, RX, TX)
-    if (modem.begin(115200, SERIAL_8N1, 16, 17)) {
-        Serial.println("Modem Ready!");
-        modem.connectGPRS("your_apn_here");
-    }
+    modem.mqtt.setCallback(onMessageReceived);
+    modem.mqtt.connect("broker.hivemq.com", 1883, "ClientID");
 }
 
 void loop() {
-    // Check signal every 20 seconds automatically
-    int rssi = modem.signalQuality();
-    Serial.printf("Signal Strength: %d/31\n", rssi);
-    delay(5000);
+    modem.mqtt.loop(); // Important! Handles incoming data
 }
 ```
 
----
+### 3. HTTPS & OTA Updates
+**File:** `03_HTTPS_and_OTA.ino`  
+Learn how to interact with web APIs and update firmware remotely.
 
-## 📑 Module Documentation
-
-### ☁️ MQTT Support (`modem.mqtt`)
-The MQTT module handles asynchronous messaging and state management.
-
-| Method | Description |
-| :--- | :--- |
-| `connect()` | Connect to a standard MQTT broker. |
-| `connectSecure()` | Connect using SSL/TLS. |
-| `subscribe(topic, qos)` | Subscribe to a specific topic. |
-| `publish(topic, msg, retained, qos)` | Send a message to the broker. |
-| `setCallback(cb)` | Register a function to handle incoming messages. |
-
-**Example Callback:**
-```cpp
-void onMqttMessage(const String& topic, const String& payload) {
-    Serial.println("Message arrived: " + payload);
-}
-
-void setup() {
-    modem.mqtt.setCallback(onMqttMessage);
-}
-```
-
----
-
-### 📥 HTTP & OTA Updates (`modem.http`)
-Perform secure web requests or update your ESP32 firmware over the cellular network.
+*   **HTTPS GET:** Simple method to fetch JSON or HTML content from a URL.
+*   **NTP Time:** Synchronizes the modem's internal clock with global time servers.
+*   **OTA (Over-The-Air):** Downloads a `.bin` file from a server and flashes the ESP32 directly. The `OTAState` struct tracks progress (0-100%) and status messages.
 
 ```cpp
-// Simple HTTPS GET
-String response = modem.http.httpsGET("https://api.example.com/data");
-
-// Perform OTA Update
-OTAState state;
-if (modem.http.performOTA("http://server.com/firmware.bin", state)) {
-    Serial.println("Update success! Rebooting...");
+OTAState ota;
+if (modem.http.performOTA("http://myserver.com/v2.bin", ota)) {
+    Serial.println("Update Complete!");
     ESP.restart();
 }
 ```
 
 ---
 
-### ⏰ NTP Time (`modem.ntp`)
-Keep your system clock accurate without a GPS module.
+## 🛠️ Integrated Error Decoder
+One of the most powerful features of this library is the **Automatic Error Decoder**. When an AT command fails, the library intercepts the error code (like `+CMQTT: 19`) and translates it into a human-readable message.
 
-```cpp
-String currentTime;
-if (modem.ntp.fetchNTPTime("pool.ntp.org", 0, currentTime)) {
-    Serial.println("Network Time: " + currentTime);
-}
-```
-
----
-
-## 🛠️ Advanced Error Handling
-Stop guessing why commands fail. The library includes an integrated error interpreter for MQTT, HTTP, and TCP.
-
-```cpp
-// Internally used during failures
-// Example output: "📡 MQTT → Code: 19 → Client is already in use"
-```
+**Example Console Output:**
+> `>>> AT+CMQTTCONNECT=0,...`  
+> `<<< ERROR`  
+> `📡 MQTT → Code: 19 → Client is already in use`
 
 ---
 
 ## 🔌 Hardware Connection
-For optimal performance, ensure your SIM7600 has a dedicated power source (3.7V - 4.2V) capable of providing at least **2A current spikes**.
+The SIM7600 requires significant power during LTE transmission. Ensure your power supply can handle **2A spikes**.
 
 | SIM7600 Pin | ESP32 Pin | Note |
 | :--- | :--- | :--- |
 | **TX** | RX (GPIO 16) | 3.3V Logic Level |
 | **RX** | TX (GPIO 17) | 3.3V Logic Level |
 | **GND** | GND | Common Ground |
-| **VCC** | 5V / VBAT | Min 2A Peak |
+| **VCC** | 5V / VBAT | Min 2A Peak Current |
 
 ---
 
 ## ⚙️ Configuration
-If using **FreeRTOS**, define `SIM7600_USE_FREERTOS` in your build flags or before including the header to ensure the library uses non-blocking delays.
-
-```cpp
-#define SIM7600_USE_FREERTOS
-#include <SIM7600.h>
-```
+If you are using **FreeRTOS** (standard on ESP32), the library is optimized to yield to the scheduler during wait times. To enable this, ensure `SIM7600_USE_FREERTOS` is defined (this is handled automatically in most ESP32 environments).
 
 ---
-
-## 🤝 Contributing
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 ## 📄 License
 Distributed under the MIT License. See `LICENSE` for more information.
